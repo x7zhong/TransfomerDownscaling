@@ -1,0 +1,121 @@
+# general settings
+name: Uformer_MultiFuseOut_ep120_2e4lr_c128_multivarall_zscore_x10_B4G8
+model_type: ClimateUformerMultiscaleFuseModel
+scale: 10
+num_gpu: 1  # set num_gpu: 0 for cpu mode
+manual_seed: 0
+fp16: false
+
+# dataset and data loader settings
+datasets:
+  common:
+    name: WW
+    type: MergeDataset
+    dirName_stat: ./DownScale_Paper/param_stat_12_36/
+    dirName_data: ./DownScale_Paper/
+    listofVar: [T_2_m_cut,WS_10_m_cut,U_10_m_cut,V_10_m_cut,SP_cut,DPT_2_m_cut]
+    varName_gt: [T_2_m_cut_obs,WS_10_m_cut_obs]
+    radar_file: ./DownScale_Paper/DownScale_Correction_split/data.txt
+    index_gt: [0,1]
+    normalize: 'zscore'
+    seq_length: 1
+    seq_interval: 1
+
+  train:
+    train_file: ./DownScale_Paper/DownScale_Correction_split/train_12_36.txt
+    #dataloader
+    use_shuffle: true
+    num_worker_per_gpu: 2
+    batch_size_per_gpu: 4
+    dataset_enlarge_ratio: 1
+    randomcrop: false
+    gt_size: 640
+    prefetch_mode: ~
+
+  val:
+    train_file: ./DownScale_Paper/DownScale_Correction_split/val_12_36.txt
+
+  test_1:
+    train_file: ./DownScale_Paper/DownScale_Correction_split/val_12_36.txt
+
+# network structures
+network_g:
+  type: ClimateUformerMultiScaleHGTMultiScaleOut
+  add_hgt: false
+  upscale: 10
+  num_in_ch: 6
+  num_out_ch: 2
+  img_size: 64
+  window_size: 8
+  depths: [2, 2, 2, 2, 2]
+  embed_dim: 128
+  num_heads: [4, 8, 16, 16, 8]
+  mlp_ratio: 4
+  token_projection: 'linear'
+  token_mlp: 'leff'
+  activation: none
+  multi_add_pos: 'decoder'
+
+# path
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+
+# training settings
+train:
+  optim_g:
+    type: Adam
+    lr: !!float 2e-4
+    betas: [0.9, 0.99]
+
+  #total 203520
+  scheduler:
+    type: MultiStepLR
+    milestones: [19080, 30528, 34344, 36252] #[1/2, 4/5, 9/10, 19/20] 1096 per epoch
+    gamma: 0.5
+
+  #13568 train batch 4 424/iter
+  total_iter: 38160 # 120 epoches
+  warmup_iter: -1  # 5 epoches
+
+  # losses
+  pixel_opt:
+    type: CharbonnierLoss
+    loss_weight: 10
+    reduction: mean
+
+# validation settings
+val:
+  val_freq: 318
+  save_img: false
+  save_npy: true
+  save_npy_onlyoutput: true
+  pbar: true
+
+  metrics:
+    psnr: # metric name, can be arbitrary
+      type: calculate_climate_psnr
+      crop_border: 10
+    ssim:
+      type: calculate_climate_ssim
+      crop_border: 10
+    mse:
+      type: calculate_climate_mse
+      crop_border: 10
+      better: lower
+    mae:
+      type: calculate_climate_mae
+      crop_border: 10
+      better: lower
+
+# logging settings
+logger:
+  print_freq: 10
+  save_checkpoint_freq: 3180
+  use_tb_logger: true
+
+# dist training settings
+dist_params:
+  backend: nccl
+  port: 29500
